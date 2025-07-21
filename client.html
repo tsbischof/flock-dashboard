@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Flock cameras found today</title>
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+	<style>
+                body, html {
+                        margin: 0;
+                        height: 100%;
+                        font-family: sans-serif;
+                }
+
+                #map {
+                        height: 100%;
+                        width: 100%;
+                        position: relative;
+                }
+	</style>
+</head>
+<body>
+	<div id="map"></div>
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+	<script>
+function addFadingMarker(latlng, label, createdAt, fadeDurationMs = 5 * 60 * 1000) {
+	const now = Date.now();
+	const elapsed = now - createdAt;
+
+	const marker = L.marker(latlng, { opacity: 1.0 }).addTo(marker_group);
+	marker.bindPopup(label).openPopup();
+
+	// If marker is already expired
+	if (elapsed >= fadeDurationMs) {
+		map.removeLayer(marker);
+		return;
+	}
+
+	// Start fading based on remaining time
+	const remaining = fadeDurationMs - elapsed;
+	const steps = 100;
+	const interval = remaining / steps;
+	let currentStep = 0;
+
+	const fade = setInterval(() => {
+		currentStep++;
+		const opacity = 1 - currentStep / steps;
+		if (opacity <= 0) {
+			map.removeLayer(marker);
+			clearInterval(fade);
+		} else {
+			marker.setOpacity(opacity);
+		}
+	}, interval);
+}
+
+const center = [39.8283, -98.5795];
+const initial_zoom = 4;
+const socket = new WebSocket("ws://localhost:3000");
+
+const map = L.map('map', {
+        zoomControl: false
+}).setView(center, initial_zoom);
+const base_layer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+	maxZoom: 19, 
+	attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+});
+base_layer.addTo(map);
+
+const marker_group = L.layerGroup().addTo(map);
+
+socket.addEventListener("open", () => {
+	console.log("Connected to server");
+});
+
+socket.addEventListener("message", (event) => {
+	console.log("Message from server", event.data);
+	try {
+		const msg = JSON.parse(event.data);
+		addFadingMarker([msg.lat, msg.lon], msg.label, new Date(msg.createdAt), 24*60*60*1000);
+	} catch (e) {
+		console.error("failed to handle message:", event.data);
+	}
+});
+
+socket.addEventListener("close", () => {
+	console.log("Disconnected from server");
+});
+
+socket.addEventListener("error", (error) => {
+	console.error("WebSocket error:", error);
+});
+	</script>
+</body>
+</html>
+
