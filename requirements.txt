@@ -1,4 +1,5 @@
 bs4
-websocket_server
-requests
+lxml
 python-dateutil
+requests
+websocket_server
