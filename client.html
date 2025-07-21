@@ -25,7 +25,7 @@ function addFadingMarker(latlng, label, createdAt, fadeDurationMs = 5 * 60 * 100
 	const now = Date.now();
 	const elapsed = now - createdAt;
 
-	const marker = L.marker(latlng, { opacity: elapsed/fadeDurationMs }).addTo(marker_group);
+	const marker = L.marker(latlng, { opacity: (fadeDurationMs - elapsed)/fadeDurationMs }).addTo(marker_group);
 	marker.bindPopup(label).openPopup();
 
 	// If marker is already expired
