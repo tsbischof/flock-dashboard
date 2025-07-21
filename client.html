@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>Flock cameras found today</title>
+	<title>Flock cameras this week</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
 	<style>
                 body, html {
@@ -80,11 +80,12 @@ socket.addEventListener("open", () => {
 	console.log("Connected to server");
 });
 
+const max_age = 7*24*60*60*1000; // one week
 socket.addEventListener("message", (event) => {
 	console.log("Message from server", event.data);
 	try {
 		const msg = JSON.parse(event.data);
-		addFadingMarker([msg.lat, msg.lon], msg.tags, new Date(msg.createdAt), 24*60*60*1000);
+		addFadingMarker([msg.lat, msg.lon], msg.tags, new Date(msg.createdAt), max_age);
 	} catch (e) {
 		console.error("failed to handle message:", event.data);
 	}

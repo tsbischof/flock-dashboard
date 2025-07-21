@@ -176,6 +176,8 @@ def osm_fetcher(osc_path_queue, max_age=datetime.timedelta(days=1), fetch_delay=
     current_sequence = get_current_sequence()
     start = current_sequence - int(max_age.total_seconds() / 60)
 
+    logger.info(f"load starting at {start=}")
+
     for sequence in range(start, current_sequence + 1):
         do_sleep, dst = fetch_sequence(sequence)
         osc_path_queue.put(dst)
@@ -319,7 +321,10 @@ def main():
     args = parser.parse_args()
 
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO, force=True
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        force=True,
+        format="[%(asctime)s] [%(process)d] [%(levelname)s] [%(name)s:%(lineno)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S %z",
     )
 
     db = get_db()
@@ -328,8 +333,10 @@ def main():
     broadcast_queue = queue.Queue()
     osc_path_queue = queue.Queue()
 
+    max_age = datetime.timedelta(minutes=args.max_age)
+
     with nodes_lock:
-        nodes.set_max_age(datetime.timedelta(minutes=args.max_age))
+        nodes.set_max_age(max_age)
         nodes.extend(load_nodes(db))
 
     logger.info(f"loaded {len(nodes)} nodes")
@@ -338,7 +345,12 @@ def main():
     server.set_fn_new_client(connect)
     server.set_fn_client_left(disconnect)
 
-    threading.Thread(target=osm_fetcher, args=(osc_path_queue,), daemon=True).start()
+    threading.Thread(
+        target=osm_fetcher,
+        args=(osc_path_queue,),
+        kwargs={"max_age": max_age},
+        daemon=True,
+    ).start()
     threading.Thread(
         target=flock_finder, args=(osc_path_queue, broadcast_queue), daemon=True
     ).start()

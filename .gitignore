@@ -3,3 +3,4 @@ __pycache__/
 venv/
 planet.openstreetmap.org/
 *.sqlite3
+*.swp
