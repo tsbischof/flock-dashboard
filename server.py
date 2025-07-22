@@ -63,6 +63,10 @@ class Node:
     def lon(self):
         return float(self.soup["lon"])
 
+    @property
+    def user(self):
+        return self.soup["user"]
+
     def key(self):
         return (self.id, self.changeset, self.action)
 
@@ -131,6 +135,10 @@ class Nodes:
 
     def __len__(self):
         return len([e for e in self])
+
+    def contributors(self):
+        for node in self:
+            yield node.user
 
 
 class Changeset:
@@ -370,9 +378,13 @@ def connect(client, server):
     # send historical data
     with nodes_lock:
         ns = list(sorted(nodes))
+        n_contributors = len(set(nodes.contributors()))
         for node in ns:
             try:
-                server.send_message(client, json.dumps(node.to_dict()))
+                msg = node.to_dict()
+                msg["contributors"] = n_contributors
+                msg = json.dumps(msg)
+                server.send_message(client, msg)
             except Exception as e:
                 logger.error(f"error sending message to client {client['id']}: {e}")
 
@@ -399,9 +411,14 @@ def disconnect(client, server):
 def broadcast_loop(server, broadcast_queue):
     while True:
         node = broadcast_queue.get()
+        with nodes_lock:
+            n_contributors = len(set(nodes.contributors()))
+
         logger.info("do broadcast")
         with clients_lock:
-            msg = json.dumps(node.to_dict())
+            msg = node.to_dict()
+            msg["contributors"] = n_contributors
+            msg = json.dumps(msg)
 
             for client in clients.values():
                 try:
