@@ -1,6 +1,8 @@
 # Flock dashboard
 Visualization of when Flock cameras are found
 
+[See it live](http://alprwatch.org/flock.html)
+
 ![demo](https://raw.githubusercontent.com/tsbischof/flock-dashboard/master/demo.png)
 
 ## How it works

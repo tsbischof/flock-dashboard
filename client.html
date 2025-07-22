@@ -55,7 +55,7 @@
 </head>
 <body>
 	<div id="map">
-		<div id="banner">Flock Safety ALPR found this week: <span id="camera-count"></span></div>
+		<div id="banner">Flock Safety ALPR found this week: <span id="camera-count"></span><br/>From <span id="contributor-count"></span> contributors</div>
 	</div>
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
 	<script>
@@ -107,7 +107,7 @@ function center_map() {
 	map.setView(center, initial_zoom);
 }
 
-function update_count(count, flash=true) {
+function update_alpr_count(count, flash=true) {
 	const countElem = document.getElementById("camera-count");
 	countElem.textContent = count;
 	if ( flash ) {
@@ -116,6 +116,11 @@ function update_count(count, flash=true) {
 		void banner.offsetWidth; // force reflow
 		banner.classList.add("highlight-flash");
 	}
+}
+
+function update_contributor_count(n) {
+	const elem = document.getElementById("contributor-count");
+	elem.textContent = n;
 }
 
 var DEBUG = false;
@@ -168,7 +173,8 @@ socket.addEventListener("message", (event) => {
 	try {
 		const msg = JSON.parse(event.data);
 		addFadingMarker([msg.lat, msg.lon], msg.tags, new Date(msg.createdAt), msg.id, max_age);
-		update_count(marker_group.getLayers().length);
+		update_alpr_count(marker_group.getLayers().length);
+		update_contributor_count(msg.contributors);
 	} catch (e) {
 		if ( DEBUG ) { console.error("failed to handle message:", event.data); }
 	}
