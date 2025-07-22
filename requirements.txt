@@ -3,3 +3,4 @@ lxml
 python-dateutil
 requests
 websocket_server
+watchdog
