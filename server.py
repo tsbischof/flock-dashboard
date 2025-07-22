@@ -15,6 +15,8 @@ from typing import Dict, Tuple
 import bs4
 import dateutil
 import requests
+import watchdog
+import watchdog.observers
 from websocket_server import WebsocketServer
 
 
@@ -102,7 +104,6 @@ class Nodes:
             try:
                 n = Node.from_text(node, action)
                 self.add(n)
-                logger.info("loaded")
             except ValueError:
                 logger.error(f"could not load {node} as node")
 
@@ -139,12 +140,22 @@ class Changeset:
         self.root = root
         self.rel_path = Path("minute") / s[0:3] / s[3:6] / f"{s[6:9]}.osc.gz"
 
+    @classmethod
+    def from_path(cls, path: Path):
+        a, b, c = re.search("(\d{3})/(\d{3})/(\d{3})\.osc\.gz", str(path)).groups()
+        sequence = int(a + b + c)
+        root = path.parents[3]
+        return cls(sequence, root)
+
     @property
     def path(self):
         return self.root / self.rel_path
 
     def __eq__(self, other):
         return self.rel_path == other.rel_path
+
+    def exists(self):
+        return self.path.exists()
 
     def fetch(self):
         logger.debug(f"exists? {self.path}")
@@ -270,26 +281,37 @@ def get_current_sequence(retries=5, retry_delay=5):
             time.sleep(retry_delay)
 
 
-def osm_fetcher(
+def catch_up(
+    changeset_queue,
+    watch=False,
+    max_age=datetime.timedelta(days=1),
+    fetch_delay=2,
+    replication_dir=Path("."),
+):
+    """Catch up on history. If set to watch, do not attempt to actually fetch files"""
+    current_sequence = get_current_sequence()
+    start = current_sequence - int(max_age.total_seconds() / 60)
+
+    logger.info(f"find changesets starting at sequence={start}")
+    for sequence in range(start, current_sequence + 1):
+        cs = Changeset(sequence, root=replication_dir)
+
+        if not watch:
+            do_sleep = cs.fetch()
+            if do_sleep:
+                time.sleep(fetch_delay)
+
+        if cs.exists():
+            changeset_queue.put(cs)
+
+
+def fetch_osc(
     changeset_queue,
     max_age=datetime.timedelta(days=1),
     fetch_delay=2,
     replication_dir=Path("."),
 ):
-    """Catch up on history, then listen for changes"""
-    current_sequence = get_current_sequence()
-    start = current_sequence - int(max_age.total_seconds() / 60)
-
-    logger.info(f"find changesets starting at sequence={start}")
-
-    for sequence in range(start, current_sequence + 1):
-        cs = Changeset(sequence, root=replication_dir)
-        do_sleep = cs.fetch()
-        changeset_queue.put(cs)
-        if do_sleep:
-            time.sleep(fetch_delay)
-
-    last_sequence = current_sequence
+    last_sequence = get_current_sequence()
     while True:
         current_sequence = get_current_sequence()
         if current_sequence > last_sequence:
@@ -304,6 +326,17 @@ def osm_fetcher(
         time.sleep(60)
 
     # todo remove older files
+
+
+class OscHandler(watchdog.events.FileSystemEventHandler):
+    def __init__(self, changeset_queue, logger=None):
+        super().__init__()
+        self.queue = changeset_queue
+
+    def on_closed(self, event):
+        if not event.is_directory and event.src_path.endswith("gz"):
+            cs = Changeset.from_path(Path(event.src_path))
+            self.queue.put(cs)
 
 
 def flock_finder(changeset_queue, broadcast_queue):
@@ -398,6 +431,12 @@ def main():
         default=Path("."),
         help="directory to store OSM changes in",
     )
+    parser.add_argument(
+        "-w",
+        "--watch",
+        action="store_true",
+        help="watch the replication dir for changes, rather than fetching patches directly",
+    )
 
     args = parser.parse_args()
 
@@ -425,12 +464,23 @@ def main():
     server.set_fn_new_client(connect)
     server.set_fn_client_left(disconnect)
 
-    threading.Thread(
-        target=osm_fetcher,
-        args=(changeset_queue,),
-        kwargs={"max_age": max_age, "replication_dir": args.replication_dir},
-        daemon=True,
-    ).start()
+    catch_up(changeset_queue, max_age=max_age, replication_dir=args.replication_dir)
+    if args.watch:
+        observer = watchdog.observers.Observer()
+        handler = OscHandler(changeset_queue, logger=logger)
+        observer.schedule(handler, args.replication_dir, recursive=True)
+        observer.start()
+    else:
+        threading.Thread(
+            target=fetch_osc,
+            args=(changeset_queue,),
+            kwargs={
+                "max_age": max_age,
+                "replication_dir": args.replication_dir,
+                "watch": args.watch,
+            },
+            daemon=True,
+        ).start()
     threading.Thread(
         target=flock_finder, args=(changeset_queue, broadcast_queue), daemon=True
     ).start()
