@@ -1,7 +1,7 @@
 # Flock dashboard
 Visualization of when Flock cameras are found
 
-![demo](https://github.com/tsbischof/flock-dashboard/demo.png)
+![demo](https://raw.githubusercontent.com/tsbischof/flock-dashboard/master/demo.png)
 
 ## How it works
 
