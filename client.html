@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>Flock cameras this week</title>
+	<title>ALPR found this week</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
 	<style>
                 body, html {
@@ -15,26 +16,67 @@
                         width: 100%;
                         position: relative;
                 }
+                .leaflet-recenter {
+                        font-size: 36px;
+                }
+
+		.leaflet-popup-content {
+			font-size: 16px;
+		}
+
+		#banner {
+			position: absolute;
+			top: 0;
+			left: 0;
+			right: 0;
+			background-color: rgba(0, 0, 0, 0.75);
+			color: #fff;
+			padding: 10px;
+			text-align: center;
+			font-weight: bold;
+			z-index: 2000; 
+			pointer-events: none; 
+			font-size: 16px;
+		}
+
+		.highlight-flash {
+			animation: fadeFromRed 5s ease-out;
+		}
+
+		@keyframes fadeFromRed {
+			0% {
+				background-color: red;
+			}
+			100% {
+				background-color: rgba(0, 0, 0, 0.75);
+			}
+		}
 	</style>
 </head>
 <body>
-	<div id="map"></div>
+	<div id="map">
+		<div id="banner">Flock Safety ALPR found this week: <span id="camera-count"></span></div>
+	</div>
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
 	<script>
-function addFadingMarker(latlng, tags, createdAt, fadeDurationMs = 5 * 60 * 1000) {
+function addFadingMarker(latlng, tags, createdAt, node_id, fadeDurationMs = 5 * 60 * 1000) {
 	const now = Date.now();
 	const elapsed = now - createdAt;
 
 	const marker = L.marker(latlng, { 
 		opacity: (fadeDurationMs - elapsed)/fadeDurationMs 
 	}).addTo(marker_group);
-	let label = document.createElement("ul");
-	label.innerText = createdAt;
+	const label = document.createElement("div");
+	const tagsElem = document.createElement("ul");
+	label.appendChild(tagsElem);
 	for (const [k, v] of Object.entries(tags)) {
 		const tag = document.createElement("li");
 		tag.innerHTML = "<strong>" + k + "</strong>: " + v;	
-		label.appendChild(tag);
+		tagsElem.appendChild(tag);
 	}
+	const link = document.createElement("div");
+	link.innerHTML = `<hr>Found at ` + createdAt.toISOString() + `<br/>See on <a href="https://www.openstreetmap.org/node/` + node_id + `" target="_blank">OSM</a>`;
+	label.appendChild(link);
 	marker.bindPopup(label).openPopup();
 
 	// If marker is already expired
@@ -61,6 +103,22 @@ function addFadingMarker(latlng, tags, createdAt, fadeDurationMs = 5 * 60 * 1000
 	}, interval);
 }
 
+function center_map() {
+	map.setView(center, initial_zoom);
+}
+
+function update_count(count, flash=true) {
+	const countElem = document.getElementById("camera-count");
+	countElem.textContent = count;
+	if ( flash ) {
+		const banner = document.getElementById("banner");
+		banner.classList.remove("highlight-flash");
+		void banner.offsetWidth; // force reflow
+		banner.classList.add("highlight-flash");
+	}
+}
+
+var DEBUG = false;
 const center = [39.8283, -98.5795];
 const initial_zoom = 4;
 const socket = new WebSocket("ws://localhost:3000");
@@ -76,27 +134,52 @@ base_layer.addTo(map);
 
 const marker_group = L.layerGroup().addTo(map);
 
+L.control.scale({position: 'bottomright'}).addTo(map);
+L.control.zoom({position: 'bottomright'}).addTo(map);
+
+const recenterControl = L.Control.extend({
+	options: { position: 'bottomright' },
+
+	onAdd: function (map) {
+		const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-recenter');
+		const button = L.DomUtil.create('a', '', container);
+		button.innerHTML = '⌖'; // or use an icon
+		button.title = 'Recenter map';
+		button.href = '#';
+		L.DomEvent.on(button, 'click', L.DomEvent.stop)
+			.on(button, 'click', () => { center_map(); });
+
+		return container;
+	}
+});
+
+map.addControl(new recenterControl());
+
+
 socket.addEventListener("open", () => {
-	console.log("Connected to server");
+	if ( DEBUG ) { console.log("Connected to server"); }
 });
 
 const max_age = 7*24*60*60*1000; // one week
 socket.addEventListener("message", (event) => {
-	console.log("Message from server", event.data);
+	if ( DEBUG ) { console.log("Message from server", event.data); }
+	if ( event.data == "ping" ) { return; }
+
 	try {
 		const msg = JSON.parse(event.data);
-		addFadingMarker([msg.lat, msg.lon], msg.tags, new Date(msg.createdAt), max_age);
+		addFadingMarker([msg.lat, msg.lon], msg.tags, new Date(msg.createdAt), msg.id, max_age);
+		update_count(marker_group.getLayers().length);
 	} catch (e) {
-		console.error("failed to handle message:", event.data);
+		if ( DEBUG ) { console.error("failed to handle message:", event.data); }
 	}
 });
 
 socket.addEventListener("close", () => {
-	console.log("Disconnected from server");
+	if ( DEBUG ) { console.log("Disconnected from server"); } 
 });
 
 socket.addEventListener("error", (error) => {
-	console.error("WebSocket error:", error);
+	if ( DEBUG ) { console.error("WebSocket error:", error); } 
 });
 	</script>
 </body>
